@@ -1,0 +1,35 @@
+[project]
+name = "clinical-trial-supply-chain-anomaly-detection"
+version = "0.1.0"
+description = "Real-time anomaly detection for clinical trial supply chains: Airflow -> PySpark -> Iceberg (write-audit-publish) -> FastAPI"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["pipeline", "api", "dags", "scripts", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency-injection pattern requires calling Depends(...) in
+# argument defaults; this is idiomatic FastAPI, not the mutable-default
+# footgun B008 otherwise guards against.
+"api/**.py" = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pipeline", "api", "dags", "scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-v --strict-markers"
+markers = [
+    "spark: tests that require a local SparkSession fixture (slower to collect/run)",
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true

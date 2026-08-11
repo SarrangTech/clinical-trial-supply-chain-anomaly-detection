@@ -1,0 +1,17 @@
+# Runtime dependencies shared by the pipeline package and the FastAPI service.
+# Airflow itself is NOT pip-installed here -- it lives only inside
+# docker/airflow/Dockerfile, which uses Airflow's own constraints file to
+# avoid the dependency resolution issues Airflow is notorious for outside
+# its official install process.
+
+pyspark==3.5.4
+pyiceberg[s3fs,pyarrow]==0.8.1
+great-expectations==1.3.9
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.4
+pydantic-settings==2.7.0
+pandas==2.2.3
+pyarrow==17.0.0
+boto3==1.35.90
+faker==33.1.0
