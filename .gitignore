@@ -37,6 +37,7 @@ warehouse/
 # Data
 data/*.csv
 data/*.parquet
+data/ground_truth/
 !data/README.md
 
 # OS / editor

@@ -37,6 +37,6 @@ airflow-cli:
 	docker compose exec airflow-scheduler airflow $(ARGS)
 
 generate:
-	python scripts/run_generators.py
+	python -m scripts.run_generators
 
 ci: lint test
