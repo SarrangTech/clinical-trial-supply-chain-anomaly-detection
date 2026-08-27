@@ -42,6 +42,15 @@ TEMP_PROFILES: list[tuple[str, tuple[float, float], float]] = [
 DEFAULT_COLD_CHAIN_ANOMALY_RATE = 0.08
 READING_INTERVAL_MINUTES = 45
 
+# A sensor malfunction sentinel used to inject *data-quality* defects, which
+# are deliberately distinct from cold-chain breaches: a breach is a real,
+# physically plausible temperature that Great Expectations must let through
+# untouched (it's exactly what pipeline.anomaly.cold_chain exists to catch);
+# a defect is a physically impossible reading a data-quality gate should
+# quarantine before it ever reaches the gold layer.
+SENSOR_MALFUNCTION_TEMP_C = -999.0
+DEFAULT_DATA_QUALITY_DEFECT_RATE = 0.005
+
 
 def _weighted_choice(rng: random.Random, options: list[tuple[str, tuple[float, float], float]]):
     names, ranges, weights = zip(*options, strict=True)
@@ -102,6 +111,7 @@ def generate_shipments(
     seed: int = 42,
     cold_chain_anomaly_rate: float = DEFAULT_COLD_CHAIN_ANOMALY_RATE,
     breach_minutes_threshold: int = 30,
+    data_quality_defect_rate: float = DEFAULT_DATA_QUALITY_DEFECT_RATE,
     as_of: datetime | None = None,
     lookback_days: int = 180,
 ) -> list[dict]:
@@ -117,6 +127,10 @@ def generate_shipments(
         breach_minutes_threshold: Minimum duration (in minutes) an injected
             breach is guaranteed to last -- matches
             `pipeline.anomaly.cold_chain`'s detection threshold by default.
+        data_quality_defect_rate: Fraction of shipments with one reading
+            replaced by `SENSOR_MALFUNCTION_TEMP_C` -- a data-quality defect
+            for `pipeline.validation` to quarantine, independent of
+            `cold_chain_anomaly_rate`.
         as_of: "Today" for the purposes of the shipment lookback window.
         lookback_days: Shipments are spread across the `lookback_days` days
             before `as_of`.
@@ -125,7 +139,7 @@ def generate_shipments(
         One dict per shipment with keys: shipment_id, trial_id, origin_site,
         destination_site, carrier, ship_timestamp, expected_arrival,
         actual_arrival, temperature_log, required_temp_range,
-        _ground_truth_cold_chain_breach.
+        _ground_truth_cold_chain_breach, _ground_truth_data_defect.
     """
     if not sites:
         raise ValueError("generate_shipments requires at least one site")
@@ -156,6 +170,14 @@ def generate_shipments(
             rng, ship_timestamp, actual_arrival, temp_range, inject_breach, breach_minutes_threshold
         )
 
+        inject_defect = rng.random() < data_quality_defect_rate
+        if inject_defect:
+            # A single isolated malfunction reading -- pipeline.anomaly.cold_chain
+            # never treats a lone out-of-range reading as a sustained breach,
+            # so this can't be mistaken for (or mask) a real breach signal.
+            defect_idx = rng.randrange(len(temperature_log))
+            temperature_log[defect_idx]["temp_c"] = SENSOR_MALFUNCTION_TEMP_C
+
         shipments.append(
             {
                 "shipment_id": shipment_id,
@@ -169,12 +191,15 @@ def generate_shipments(
                 "temperature_log": temperature_log,
                 "required_temp_range": [temp_range[0], temp_range[1]],
                 "_ground_truth_cold_chain_breach": inject_breach,
+                "_ground_truth_data_defect": inject_defect,
             }
         )
 
     logger.info(
-        "Generated %d shipments (%d with an injected cold-chain breach)",
+        "Generated %d shipments (%d with an injected cold-chain breach, %d with an injected"
+        " data-quality defect)",
         len(shipments),
         sum(1 for s in shipments if s["_ground_truth_cold_chain_breach"]),
+        sum(1 for s in shipments if s["_ground_truth_data_defect"]),
     )
     return shipments

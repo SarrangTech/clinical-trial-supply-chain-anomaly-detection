@@ -33,12 +33,19 @@ COUNTRIES = [
 # is expected to catch.
 DEFAULT_AT_RISK_RATE = 0.15
 
+# Fraction of sites with a deliberately invalid `enrollment_actual` -- a
+# data-quality defect for `pipeline.validation` to quarantine, distinct from
+# (and independent of) being behind enrollment pace, which is a legitimate
+# business condition, not a data defect.
+DEFAULT_DATA_QUALITY_DEFECT_RATE = 0.01
+
 
 def generate_sites(
     n_sites: int = 300,
     n_trials: int = 20,
     seed: int = 42,
     at_risk_rate: float = DEFAULT_AT_RISK_RATE,
+    data_quality_defect_rate: float = DEFAULT_DATA_QUALITY_DEFECT_RATE,
     as_of: date | None = None,
 ) -> list[dict]:
     """Generate synthetic clinical trial sites.
@@ -49,13 +56,16 @@ def generate_sites(
         seed: RNG seed; the same seed always produces the same sites.
         at_risk_rate: Fraction of sites deliberately given a pace that will
             miss `enrollment_deadline` under a linear projection.
+        data_quality_defect_rate: Fraction of sites given an invalid negative
+            `enrollment_actual` -- a data-quality defect for
+            `pipeline.validation` to quarantine.
         as_of: "Today" for the purposes of computing elapsed enrollment
             pace. Defaults to the real current date.
 
     Returns:
         One dict per site with keys: site_id, trial_id, country,
         enrollment_target, enrollment_actual, enrollment_deadline,
-        enrollment_start_date, _ground_truth_at_risk.
+        enrollment_start_date, _ground_truth_at_risk, _ground_truth_data_defect.
     """
     rng = random.Random(seed)
     as_of = as_of or date.today()
@@ -84,6 +94,10 @@ def generate_sites(
             enrollment_target, max(0, round(enrollment_target * actual_fraction))
         )
 
+        inject_defect = rng.random() < data_quality_defect_rate
+        if inject_defect:
+            enrollment_actual = -1
+
         sites.append(
             {
                 "site_id": site_id,
@@ -94,13 +108,16 @@ def generate_sites(
                 "enrollment_deadline": enrollment_deadline.isoformat(),
                 "enrollment_start_date": enrollment_start_date.isoformat(),
                 "_ground_truth_at_risk": is_at_risk,
+                "_ground_truth_data_defect": inject_defect,
             }
         )
 
     logger.info(
-        "Generated %d sites across %d trials (%d flagged at-risk by construction)",
+        "Generated %d sites across %d trials (%d flagged at-risk, %d with an injected"
+        " data-quality defect)",
         len(sites),
         n_trials,
         sum(1 for s in sites if s["_ground_truth_at_risk"]),
+        sum(1 for s in sites if s["_ground_truth_data_defect"]),
     )
     return sites

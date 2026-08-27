@@ -23,6 +23,10 @@ PATIENTS_PER_SITE = 25
 FLAG_TRUE_POSITIVE_RATE = 0.8
 FLAG_FALSE_POSITIVE_RATE = 0.02
 
+# Fraction of events with a missing `patient_id` -- a data-quality defect for
+# `pipeline.validation` to quarantine, independent of protocol deviations.
+DEFAULT_DATA_QUALITY_DEFECT_RATE = 0.005
+
 
 def generate_dosing_events(
     sites: list[dict],
@@ -30,6 +34,7 @@ def generate_dosing_events(
     seed: int = 42,
     deviation_rate: float = DEFAULT_DEVIATION_RATE,
     window_days: int = 3,
+    data_quality_defect_rate: float = DEFAULT_DATA_QUALITY_DEFECT_RATE,
     as_of: datetime | None = None,
     lookback_days: int = 365,
 ) -> list[dict]:
@@ -44,6 +49,9 @@ def generate_dosing_events(
             `actual_date` more than `window_days` from `scheduled_date`.
         window_days: The acceptable scheduled-vs-actual window; also the
             default used by `pipeline.anomaly.dosing_deviation`.
+        data_quality_defect_rate: Fraction of events with `patient_id` set to
+            `None` -- a data-quality defect for `pipeline.validation` to
+            quarantine.
         as_of: "Today" for the purposes of the scheduling lookback window.
         lookback_days: Scheduled dates are spread across the `lookback_days`
             days before `as_of`.
@@ -51,7 +59,7 @@ def generate_dosing_events(
     Returns:
         One dict per event with keys: event_id, patient_id, trial_id,
         scheduled_date, actual_date, protocol_deviation_flag,
-        _ground_truth_deviation.
+        _ground_truth_deviation, _ground_truth_data_defect.
     """
     if not sites:
         raise ValueError("generate_dosing_events requires at least one site")
@@ -83,6 +91,10 @@ def generate_dosing_events(
         else:
             protocol_deviation_flag = rng.random() < FLAG_FALSE_POSITIVE_RATE
 
+        inject_defect = rng.random() < data_quality_defect_rate
+        if inject_defect:
+            patient_id = None
+
         events.append(
             {
                 "event_id": event_id,
@@ -92,12 +104,15 @@ def generate_dosing_events(
                 "actual_date": actual_date.date().isoformat(),
                 "protocol_deviation_flag": protocol_deviation_flag,
                 "_ground_truth_deviation": is_deviation,
+                "_ground_truth_data_defect": inject_defect,
             }
         )
 
     logger.info(
-        "Generated %d dosing events (%d with an injected protocol deviation)",
+        "Generated %d dosing events (%d with an injected protocol deviation, %d with an"
+        " injected data-quality defect)",
         len(events),
         sum(1 for e in events if e["_ground_truth_deviation"]),
+        sum(1 for e in events if e["_ground_truth_data_defect"]),
     )
     return events
