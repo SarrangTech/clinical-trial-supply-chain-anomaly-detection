@@ -23,6 +23,9 @@ coverage.xml
 airflow/logs/
 dags/__pycache__/
 *.log
+airflow.cfg
+airflow.db
+logs/
 
 # Great Expectations
 great_expectations/uncommitted/
